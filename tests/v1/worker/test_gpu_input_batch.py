@@ -129,6 +129,9 @@ def _construct_expected_sampling_metadata(
         temperature[index_in_input_batch] = req.sampling_params.temperature
         greedy_mask[index_in_input_batch] = (
             req.sampling_params.sampling_type == SamplingType.GREEDY)
+        if greedy_mask[index_in_input_batch]:
+            temperature[index_in_input_batch] = 1.0
+            top_k[index_in_input_batch] = VOCAB_SIZE
         min_tokens[index_in_input_batch] = (
             req.sampling_params.min_tokens,
             req.sampling_params.all_stop_token_ids)
