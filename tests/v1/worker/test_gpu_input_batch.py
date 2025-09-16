@@ -124,14 +124,13 @@ def _construct_expected_sampling_metadata(
             req.sampling_params.frequency_penalty)
         repetition_penalties[index_in_input_batch] = (
             req.sampling_params.repetition_penalty)
-        top_k[index_in_input_batch] = req.sampling_params.top_k
+        top_k[index_in_input_batch] = req.sampling_params.top_k or VOCAB_SIZE
         top_p[index_in_input_batch] = req.sampling_params.top_p
         temperature[index_in_input_batch] = req.sampling_params.temperature
         greedy_mask[index_in_input_batch] = (
             req.sampling_params.sampling_type == SamplingType.GREEDY)
         if greedy_mask[index_in_input_batch]:
             temperature[index_in_input_batch] = 1.0
-            top_k[index_in_input_batch] = VOCAB_SIZE
         min_tokens[index_in_input_batch] = (
             req.sampling_params.min_tokens,
             req.sampling_params.all_stop_token_ids)
@@ -155,7 +154,7 @@ def _construct_expected_sampling_metadata(
         all_random=all_random,
         top_p=None if all(x == 1.0 for x in top_p) else torch.tensor(
             top_p, dtype=torch.float, device=device),
-        top_k=None if all(x == 0 for x in top_k) else torch.tensor(
+        top_k=None if all(x == VOCAB_SIZE for x in top_k) else torch.tensor(
             top_k, dtype=torch.int, device=device),
         generators={},
         max_num_logprobs=0,
