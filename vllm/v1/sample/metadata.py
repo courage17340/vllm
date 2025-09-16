@@ -13,6 +13,7 @@ from vllm.v1.sample.logits_processor import LogitsProcessors
 class SamplingMetadata:
 
     temperature: Optional[torch.Tensor]
+    greedy_mask: Optional[torch.Tensor]
     all_greedy: bool
     all_random: bool
 

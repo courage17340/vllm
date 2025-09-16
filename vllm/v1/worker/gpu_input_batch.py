@@ -132,6 +132,7 @@ class InputBatch:
         )
 
         # Sampling-related.
+        # temperature can be divided directly now, use greedy_mask for mask
         self.temperature = torch.empty((max_num_reqs, ),
                                        dtype=torch.float32,
                                        device=device)
@@ -140,6 +141,14 @@ class InputBatch:
                                                   device="cpu",
                                                   pin_memory=pin_memory)
         self.temperature_cpu = self.temperature_cpu_tensor.numpy()
+        self.greedy_mask = torch.empty((max_num_reqs, ),
+                                       dtype=torch.bool,
+                                       device=device)
+        self.greedy_mask_cpu_tensor = torch.empty((max_num_reqs, ),
+                                                  dtype=torch.bool,
+                                                  device="cpu",
+                                                  pin_memory=pin_memory)
+        self.greedy_mask_cpu = self.greedy_mask_cpu_tensor.numpy()
         self.greedy_reqs: set[str] = set()
         self.random_reqs: set[str] = set()
 
@@ -332,10 +341,12 @@ class InputBatch:
                 self.spec_decode_unsupported_reqs.add(req_id)
             if sampling_params.sampling_type == SamplingType.GREEDY:
                 # Avoid later division by zero.
-                self.temperature_cpu[req_index] = -1.0
+                self.temperature_cpu[req_index] = 1.0
+                self.greedy_mask_cpu[req_index] = True
                 self.greedy_reqs.add(req_id)
             else:
                 self.temperature_cpu[req_index] = sampling_params.temperature
+                self.greedy_mask_cpu[req_index] = False
                 self.random_reqs.add(req_id)
 
             self.top_p_cpu[req_index] = sampling_params.top_p
@@ -518,6 +529,8 @@ class InputBatch:
 
         self.temperature_cpu[i1], self.temperature_cpu[i2] = \
             self.temperature_cpu[i2], self.temperature_cpu[i1]
+        self.greedy_mask_cpu[i1], self.greedy_mask_cpu[i2] = \
+            self.greedy_mask_cpu[i2], self.greedy_mask_cpu[i1]
         self.top_p_cpu[i1], self.top_p_cpu[i2] = \
             self.top_p_cpu[i2], self.top_p_cpu[i1]
         self.top_k_cpu[i1], self.top_k_cpu[i2] = \
@@ -616,6 +629,8 @@ class InputBatch:
 
             self.temperature_cpu[empty_index] = self.temperature_cpu[
                 last_req_index]
+            self.greedy_mask_cpu[empty_index] = self.greedy_mask_cpu[
+                last_req_index]
             self.top_p_cpu[empty_index] = self.top_p_cpu[last_req_index]
             self.top_k_cpu[empty_index] = self.top_k_cpu[last_req_index]
             self.frequency_penalties_cpu[
@@ -671,8 +686,11 @@ class InputBatch:
         if not self.all_greedy:
             temperature = copy_slice(self.temperature_cpu_tensor,
                                      self.temperature, num_reqs)
+            greedy_mask = copy_slice(self.greedy_mask_cpu_tensor,
+                                     self.greedy_mask, num_reqs)
         else:
             temperature = None
+            greedy_mask = None
         if not self.no_top_p:
             copy_slice(self.top_p_cpu_tensor, self.top_p, num_reqs)
         if not self.no_top_k:
@@ -710,6 +728,7 @@ class InputBatch:
 
         return SamplingMetadata(
             temperature=temperature,
+            greedy_mask=greedy_mask,
             all_greedy=self.all_greedy,
             all_random=self.all_random,
             top_p=None if self.no_top_p else self.top_p[:num_reqs],

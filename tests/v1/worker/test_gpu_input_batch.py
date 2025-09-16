@@ -10,7 +10,7 @@ import pytest
 import torch
 
 from vllm.platforms import current_platform
-from vllm.sampling_params import SamplingParams
+from vllm.sampling_params import SamplingParams, SamplingType
 from vllm.utils import is_pin_memory_available, make_tensor_with_pad
 from vllm.v1.pool.metadata import PoolingMetadata
 from vllm.v1.sample.logits_processor import LogitsProcessors
@@ -104,6 +104,7 @@ def _construct_expected_sampling_metadata(
     top_k = [0 for _ in range(num_reqs)]
     top_p = [0.0 for _ in range(num_reqs)]
     temperature = [0.0 for _ in range(num_reqs)]
+    greedy_mask = [False for _ in range(num_reqs)]
     min_tokens = {}
     logit_bias = [None] * num_reqs
     allowed_token_ids_mask = torch.zeros(num_reqs,
@@ -126,6 +127,8 @@ def _construct_expected_sampling_metadata(
         top_k[index_in_input_batch] = req.sampling_params.top_k
         top_p[index_in_input_batch] = req.sampling_params.top_p
         temperature[index_in_input_batch] = req.sampling_params.temperature
+        greedy_mask[index_in_input_batch] = (
+            req.sampling_params.sampling_type == SamplingType.GREEDY)
         min_tokens[index_in_input_batch] = (
             req.sampling_params.min_tokens,
             req.sampling_params.all_stop_token_ids)
@@ -137,11 +140,16 @@ def _construct_expected_sampling_metadata(
             bad_words_token_ids[
                 index_in_input_batch] = req.sampling_params.bad_words_token_ids
 
+    all_greedy = all(greedy_mask)
+    all_random = not any(greedy_mask)
+
     return SamplingMetadata(
-        temperature=torch.tensor(temperature, dtype=torch.float,
-                                 device=device),
-        all_greedy=False,
-        all_random=True,
+        temperature=None if all_greedy else torch.tensor(
+            temperature, dtype=torch.float, device=device),
+        greedy_mask=None if all_greedy else torch.tensor(
+            greedy_mask, dtype=torch.bool, device=device),
+        all_greedy=all_greedy,
+        all_random=all_random,
         top_p=None if all(x == 1.0 for x in top_p) else torch.tensor(
             top_p, dtype=torch.float, device=device),
         top_k=None if all(x == 0 for x in top_k) else torch.tensor(
@@ -174,7 +182,13 @@ def _construct_expected_sampling_metadata(
 
 
 def _create_sampling_params():
+    # make about 1/4 of the requests greedy
+    if np.random.randint(0, 4) == 0:
+        temperature = 0.0
+    else:
+        temperature = np.random.uniform(0.0, 1.0)
     return SamplingParams(
+        temperature=temperature,
         top_k=np.random.randint(1, 10),
         top_p=np.random.uniform(0.0, 1.0),
         presence_penalty=np.random.uniform(-2.0, 2.0),
@@ -272,8 +286,10 @@ def test_sampling_metadata_in_input_batch(device: str, batch_size: int):
                                     and torch.allclose(t1, t2))
 
     # Assert the actual and expected output.
-    assert torch.allclose(expected_sampling_metadata.temperature,
-                          sampling_metadata.temperature)
+    assert same(expected_sampling_metadata.temperature,
+                sampling_metadata.temperature)
+    assert same(expected_sampling_metadata.greedy_mask,
+                sampling_metadata.greedy_mask)
     assert same(expected_sampling_metadata.top_p, sampling_metadata.top_p)
     assert same(expected_sampling_metadata.top_k, sampling_metadata.top_k)
     assert torch.allclose(

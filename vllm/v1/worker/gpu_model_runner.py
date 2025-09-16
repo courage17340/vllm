@@ -2854,6 +2854,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
 
         dummy_metadata = SamplingMetadata(
             temperature=dummy_tensors(0.5),
+            greedy_mask=dummy_tensors(False),
             all_greedy=False,
             all_random=False,
             top_p=dummy_tensors(0.9),
